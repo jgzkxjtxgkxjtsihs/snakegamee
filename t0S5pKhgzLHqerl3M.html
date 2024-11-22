@@ -1,0 +1,555 @@
+<html><head><base href="https://your-domain.com" />
+<style>
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background: #1a1a1a;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+  }
+  
+  .game-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .game-content {
+    text-align: center;
+    position: relative;
+  }
+
+  .game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #FFF;
+    font-size: 40px;
+    text-align: center;
+    z-index: 10;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+  }
+
+  .mode-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 50px;
+  }
+
+  .game-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 50px;
+  }
+
+  .score-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 50px;
+  }
+
+  #gameCanvas {
+    border: 2px solid #4CAF50;
+    background: #000;
+  }
+
+  .score {
+    color: #4CAF50;
+    font-size: 24px;
+    margin: 10px 0;
+    text-align: left;
+  }
+
+  .controls {
+    color: #4CAF50;
+    margin-top: 20px;
+    font-size: 16px;
+  }
+
+  button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 18px;
+    margin: 10px 5px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s;
+    width: 150px;
+  }
+
+  button:hover {
+    background: #45a049;
+  }
+
+  .campaign-level {
+    color: #4CAF50;
+    font-size: 18px;
+    margin: 5px 0;
+    text-align: left;
+  }
+
+  .objective {
+    color: #4CAF50;
+    font-size: 16px;
+    margin: 5px 0;
+    text-align: left;
+  }
+
+  .speed-control {
+    color: #4CAF50;
+    margin: 10px 0;
+  }
+</style>
+</head>
+<body>
+<div class="game-container">
+  <div class="game-controls">
+    <button id="startButton" style="display: none">Start Game</button>
+    <button id="quitButton" style="display: none">Quit Game</button>
+  </div>
+  <div class="game-content">
+    <canvas id="gameCanvas" width="300" height="300"></canvas>
+    <div id="gameOverText" class="game-over" style="display: none">Game Over!</div>
+    <div class="speed-control">
+      <button id="speedButton">Speed: Normal</button>
+    </div>
+    <div class="controls">Use Arrow Keys to Move</div>
+  </div>
+  <div class="score-section">
+    <div class="score">Score: <span id="score">0</span></div>
+    <div class="campaign-level" id="levelDisplay" style="display: none">Level: <span id="level">1</span></div>
+    <div class="objective" id="objective" style="display: none">Target Score: <span id="targetScore">50</span></div>
+  </div>
+  <div class="mode-controls">
+    <button id="classicButton">Classic Mode</button>
+    <button id="campaignButton">Campaign Mode</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+const startButton = document.getElementById('startButton');
+const quitButton = document.getElementById('quitButton');
+const classicButton = document.getElementById('classicButton');
+const campaignButton = document.getElementById('campaignButton');
+const speedButton = document.getElementById('speedButton');
+const levelDisplay = document.getElementById('levelDisplay');
+const levelElement = document.getElementById('level');
+const objectiveElement = document.getElementById('objective');
+const targetScoreElement = document.getElementById('targetScore');
+const gameOverText = document.getElementById('gameOverText');
+
+const gridSize = 15;
+const tileCount = canvas.width / gridSize;
+
+let snake = [{x: 10, y: 10}];
+let food = {x: 0, y: 0};
+let obstacles = [];
+let dx = 0;
+let dy = 0;
+let score = 0;
+let gameSpeed = 100;
+let gameLoop;
+let gameActive = false;
+let lastDirection = { dx: 0, dy: 0 };
+let gameMode = '';
+let currentLevel = 1;
+let targetScore = 50;
+let speedMode = 'normal';
+
+function generateObstacles() {
+    obstacles = []; // Clear existing obstacles
+    const numObstacles = Math.min(5 + (currentLevel - 1) * 2, 20); // Increase obstacles with level, max 20
+    
+    for (let i = 0; i < numObstacles; i++) {
+        let obstacle;
+        let isValidPosition;
+        
+        do {
+            isValidPosition = true;
+            obstacle = {
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount)
+            };
+            
+            // Check collision with snake
+            for (let segment of snake) {
+                if (obstacle.x === segment.x && obstacle.y === segment.y) {
+                    isValidPosition = false;
+                    break;
+                }
+            }
+            
+            // Check collision with food
+            if (obstacle.x === food.x && obstacle.y === food.y) {
+                isValidPosition = false;
+            }
+            
+            // Check collision with other obstacles
+            for (let existingObstacle of obstacles) {
+                if (obstacle.x === existingObstacle.x && obstacle.y === existingObstacle.y) {
+                    isValidPosition = false;
+                    break;
+                }
+            }
+            
+            // Keep center area clear for initial snake position
+            if (Math.abs(obstacle.x - 10) < 2 && Math.abs(obstacle.y - 10) < 2) {
+                isValidPosition = false;
+            }
+            
+        } while (!isValidPosition);
+        
+        obstacles.push(obstacle);
+    }
+}
+
+function drawSnakeSegment(x, y, isHead) {
+    ctx.fillStyle = '#4CAF50';
+    ctx.fillRect(x * gridSize, y * gridSize, gridSize - 2, gridSize - 2);
+    
+    if (isHead) {
+        const eyeSize = 3;
+        const eyeOffset = 4;
+        let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
+        let tongueStartX, tongueStartY, tongueEndX, tongueEndY;
+        
+        if (dx === 1) {
+            leftEyeX = (x * gridSize) + gridSize - eyeOffset;
+            leftEyeY = (y * gridSize) + eyeOffset;
+            rightEyeX = (x * gridSize) + gridSize - eyeOffset;
+            rightEyeY = (y * gridSize) + gridSize - eyeOffset - 2;
+            tongueStartX = (x * gridSize) + gridSize;
+            tongueStartY = (y * gridSize) + (gridSize / 2);
+            tongueEndX = tongueStartX + 6;
+            tongueEndY = tongueStartY;
+        } else if (dx === -1) {
+            leftEyeX = (x * gridSize) + eyeOffset;
+            leftEyeY = (y * gridSize) + eyeOffset;
+            rightEyeX = (x * gridSize) + eyeOffset;
+            rightEyeY = (y * gridSize) + gridSize - eyeOffset - 2;
+            tongueStartX = (x * gridSize);
+            tongueStartY = (y * gridSize) + (gridSize / 2);
+            tongueEndX = tongueStartX - 6;
+            tongueEndY = tongueStartY;
+        } else if (dy === -1) {
+            leftEyeX = (x * gridSize) + eyeOffset;
+            leftEyeY = (y * gridSize) + eyeOffset;
+            rightEyeX = (x * gridSize) + gridSize - eyeOffset - 2;
+            rightEyeY = (y * gridSize) + eyeOffset;
+            tongueStartX = (x * gridSize) + (gridSize / 2);
+            tongueStartY = (y * gridSize);
+            tongueEndX = tongueStartX;
+            tongueEndY = tongueStartY - 6;
+        } else if (dy === 1) {
+            leftEyeX = (x * gridSize) + eyeOffset;
+            leftEyeY = (y * gridSize) + gridSize - eyeOffset;
+            rightEyeX = (x * gridSize) + gridSize - eyeOffset - 2;
+            rightEyeY = (y * gridSize) + gridSize - eyeOffset;
+            tongueStartX = (x * gridSize) + (gridSize / 2);
+            tongueStartY = (y * gridSize) + gridSize;
+            tongueEndX = tongueStartX;
+            tongueEndY = tongueStartY + 6;
+        }
+        
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tongueStartX, tongueStartY);
+        ctx.lineTo(tongueEndX, tongueEndY);
+        ctx.stroke();
+        
+        const forkLength = 4;
+        const forkAngle = Math.PI / 4; 
+        if (dx !== 0) {
+            ctx.moveTo(tongueEndX, tongueEndY);
+            ctx.lineTo(tongueEndX + (dx * forkLength * Math.cos(forkAngle)), tongueEndY + forkLength * Math.sin(forkAngle));
+            ctx.moveTo(tongueEndX, tongueEndY);
+            ctx.lineTo(tongueEndX + (dx * forkLength * Math.cos(forkAngle)), tongueEndY - forkLength * Math.sin(forkAngle));
+        } else {
+            ctx.moveTo(tongueEndX, tongueEndY);
+            ctx.lineTo(tongueEndX + forkLength * Math.sin(forkAngle), tongueEndY + (dy * forkLength * Math.cos(forkAngle)));
+            ctx.moveTo(tongueEndX, tongueEndY);
+            ctx.lineTo(tongueEndX - forkLength * Math.sin(forkAngle), tongueEndY + (dy * forkLength * Math.cos(forkAngle)));
+        }
+        ctx.stroke();
+    }
+}
+
+function showWelcomeScreen() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#FFF';
+    ctx.font = '20px Arial';
+    ctx.fillText('Select Game Mode', canvas.width/4, canvas.height/2);
+}
+
+function selectGameMode(mode) {
+    gameMode = mode;
+    classicButton.style.display = 'none';
+    campaignButton.style.display = 'none';
+    startButton.style.display = 'block';
+    quitButton.style.display = 'block';
+    speedButton.textContent = 'Speed: Normal';
+    speedMode = 'normal';
+    
+    if (mode === 'campaign') {
+        levelDisplay.style.display = 'block';
+        objectiveElement.style.display = 'block';
+        currentLevel = 1;
+        levelElement.textContent = currentLevel;
+        targetScore = currentLevel * 50;
+        targetScoreElement.textContent = targetScore;
+    }
+}
+
+function startGame() {
+    if (gameActive) return;
+    
+    gameOverText.style.display = 'none';
+    snake = [{x: 10, y: 10}];
+    dx = 1;
+    dy = 0;
+    lastDirection = { dx: 1, dy: 0 };
+    score = 0;
+    gameSpeed = 100;
+    speedMode = 'normal';
+    speedButton.textContent = 'Speed: Normal';
+    scoreElement.textContent = score;
+    if (gameMode === 'campaign') {
+        generateObstacles();
+    }
+    generateFood();
+    gameActive = true;
+    startButton.textContent = 'Restart Game';
+    if (gameLoop) clearInterval(gameLoop);
+    gameLoop = setInterval(drawGame, gameSpeed);
+}
+
+function drawGame() {
+    lastDirection.dx = dx;
+    lastDirection.dy = dy;
+    
+    const head = {
+        x: snake[0].x + dx,
+        y: snake[0].y + dy
+    };
+
+    if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+        gameOver();
+        return;
+    }
+
+    for (let i = 1; i < snake.length; i++) {
+        if (head.x === snake[i].x && head.y === snake[i].y) {
+            gameOver();
+            return;
+        }
+    }
+
+    if (gameMode === 'campaign') {
+        for (let obstacle of obstacles) {
+            if (head.x === obstacle.x && head.y === obstacle.y) {
+                gameOver();
+                return;
+            }
+        }
+    }
+
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+        score += 10;
+        scoreElement.textContent = score;
+        generateFood();
+        
+        if (gameMode === 'campaign' && score >= targetScore) {
+            nextLevel();
+        } else if (gameMode === 'classic' && score % 50 === 0) {
+            const baseSpeed = (speedMode === 'normal') ? 100 : (speedMode === 'fast') ? 70 : 49;
+            gameSpeed = Math.max(50, baseSpeed - 10);
+            clearInterval(gameLoop);
+            gameLoop = setInterval(drawGame, gameSpeed);
+        }
+    } else {
+        snake.pop();
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    snake.forEach((segment, index) => {
+        drawSnakeSegment(segment.x, segment.y, index === 0);
+    });
+
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+
+    if (gameMode === 'campaign') {
+        ctx.fillStyle = '#666666';
+        obstacles.forEach(obstacle => {
+            ctx.fillRect(obstacle.x * gridSize, obstacle.y * gridSize, gridSize - 2, gridSize - 2);
+        });
+    }
+}
+
+function nextLevel() {
+    currentLevel++;
+    levelElement.textContent = currentLevel;
+    targetScore = currentLevel * 50;
+    targetScoreElement.textContent = targetScore;
+    const baseSpeed = (speedMode === 'normal') ? 100 : (speedMode === 'fast') ? 70 : 49;
+    gameSpeed = Math.max(50, baseSpeed - (currentLevel - 1) * 10);
+    generateObstacles();
+    clearInterval(gameLoop);
+    gameLoop = setInterval(drawGame, gameSpeed);
+}
+
+function generateFood() {
+    let newFood;
+    let isValidPosition;
+    
+    do {
+        isValidPosition = true;
+        newFood = {
+            x: Math.floor(Math.random() * tileCount),
+            y: Math.floor(Math.random() * tileCount)
+        };
+        
+        for (let segment of snake) {
+            if (newFood.x === segment.x && newFood.y === segment.y) {
+                isValidPosition = false;
+                break;
+            }
+        }
+        
+        if (gameMode === 'campaign') {
+            for (let obstacle of obstacles) {
+                if (newFood.x === obstacle.x && newFood.y === obstacle.y) {
+                    isValidPosition = false;
+                    break;
+                }
+            }
+        }
+    } while (!isValidPosition);
+    
+    food = newFood;
+}
+
+function gameOver() {
+    gameActive = false;
+    clearInterval(gameLoop);
+    gameOverText.style.display = 'block';
+    startButton.textContent = 'Start Game';
+    speedMode = 'normal';
+    speedButton.textContent = 'Speed: Normal';
+}
+
+function quitGame() {
+    gameActive = false;
+    clearInterval(gameLoop);
+    score = 0;
+    scoreElement.textContent = score;
+    classicButton.style.display = 'block';
+    campaignButton.style.display = 'block';
+    startButton.style.display = 'none';
+    quitButton.style.display = 'none';
+    levelDisplay.style.display = 'none';
+    objectiveElement.style.display = 'none';
+    speedButton.textContent = 'Speed: Normal';
+    speedMode = 'normal';
+    obstacles = [];
+    showWelcomeScreen();
+}
+
+function handleKeyPress(e) {
+    if (!gameActive) return;
+    
+    const newDirection = { dx: lastDirection.dx, dy: lastDirection.dy };
+    
+    switch(e.key) {
+        case 'ArrowUp':
+            if (lastDirection.dy !== 1) {
+                newDirection.dx = 0;
+                newDirection.dy = -1;
+            }
+            break;
+        case 'ArrowDown':
+            if (lastDirection.dy !== -1) {
+                newDirection.dx = 0;
+                newDirection.dy = 1;
+            }
+            break;
+        case 'ArrowLeft':
+            if (lastDirection.dx !== 1) {
+                newDirection.dx = -1;
+                newDirection.dy = 0;
+            }
+            break;
+        case 'ArrowRight':
+            if (lastDirection.dx !== -1) {
+                newDirection.dx = 1;
+                newDirection.dy = 0;
+            }
+            break;
+    }
+    
+    dx = newDirection.dx;
+    dy = newDirection.dy;
+}
+
+function toggleSpeed() {
+    if (speedMode === 'normal') {
+        speedMode = 'fast';
+        speedButton.textContent = 'Speed: Fast';
+        gameSpeed = 70;
+    } else if (speedMode === 'fast') {
+        speedMode = 'turbo';
+        speedButton.textContent = 'Speed: Turbo';
+        gameSpeed = 49;
+    } else {
+        speedMode = 'normal';
+        speedButton.textContent = 'Speed: Normal';
+        gameSpeed = 100;
+    }
+
+    if (gameActive) {
+        clearInterval(gameLoop);
+        gameLoop = setInterval(drawGame, gameSpeed);
+    }
+}
+
+document.addEventListener('keydown', handleKeyPress);
+startButton.addEventListener('click', startGame);
+quitButton.addEventListener('click', quitGame);
+classicButton.addEventListener('click', () => selectGameMode('classic'));
+campaignButton.addEventListener('click', () => selectGameMode('campaign'));
+speedButton.addEventListener('click', toggleSpeed);
+
+showWelcomeScreen();
+</script>
+</body>
+</html>
